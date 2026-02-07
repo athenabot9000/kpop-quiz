@@ -450,16 +450,7 @@ app.prepare().then(() => {
     // Track which question this timer sequence is for (prevents stale timer callbacks)
     const questionNum = room.currentQuestion;
 
-    // Send double-down phase (5 seconds)
-    io.to(roomCode).emit('double-down-phase', {
-      questionNumber: room.currentQuestion,
-      totalQuestions: room.totalQuestions,
-      difficulty: question.difficulty,
-      category: question.category,
-      timeMs: 5000,
-    });
-
-    room._ddTimer = setTimeout(() => {
+    function sendQuestionNow() {
       // Guard: make sure we're still on the same question
       if (!room || room.status !== 'playing' || room.currentQuestion !== questionNum) return;
       room._ddTimer = null;
@@ -485,7 +476,23 @@ app.prepare().then(() => {
         if (!room || room.status !== 'playing' || room.currentQuestion !== questionNum) return;
         revealAnswer(roomCode);
       }, 10000);
-    }, 5000);
+    }
+
+    // Skip double-down on the first question — jump straight in
+    if (room.currentQuestion === 1) {
+      sendQuestionNow();
+    } else {
+      // Send double-down phase (5 seconds)
+      io.to(roomCode).emit('double-down-phase', {
+        questionNumber: room.currentQuestion,
+        totalQuestions: room.totalQuestions,
+        difficulty: question.difficulty,
+        category: question.category,
+        timeMs: 5000,
+      });
+
+      room._ddTimer = setTimeout(sendQuestionNow, 5000);
+    }
   }
 
   function revealAnswer(roomCode) {
