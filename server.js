@@ -142,13 +142,13 @@ app.prepare().then(() => {
     // Reset double-downs for new question
     engine.resetRound(roomCode);
 
-    // Send double-down phase (3 seconds)
+    // Send double-down phase (5 seconds)
     io.to(roomCode).emit('double-down-phase', {
       questionNumber: room.currentQuestion,
       totalQuestions: room.totalQuestions,
       difficulty: question.difficulty,
       category: question.category,
-      timeMs: 3000,
+      timeMs: 5000,
     });
 
     setTimeout(() => {
@@ -170,7 +170,7 @@ app.prepare().then(() => {
       room._timer = setTimeout(() => {
         revealAnswer(roomCode);
       }, 10000);
-    }, 3000);
+    }, 5000);
   }
 
   function revealAnswer(roomCode) {
