@@ -2,6 +2,8 @@
 
 interface DoubleDownProps {
   onDoubleDown: () => void;
+  onSkip: () => void;
+  onCancel: () => void;
   isActive: boolean;
   category: string;
   difficulty: number;
@@ -18,7 +20,7 @@ const categoryLabels: Record<string, string> = {
 const difficultyLabels = ['', 'Easy', 'Medium', 'Hard', 'Very Hard', 'Expert'];
 const difficultyColors = ['', 'text-green-400', 'text-blue-400', 'text-yellow-400', 'text-orange-400', 'text-red-400'];
 
-export default function DoubleDown({ onDoubleDown, isActive, category, difficulty }: DoubleDownProps) {
+export default function DoubleDown({ onDoubleDown, onSkip, onCancel, isActive, category, difficulty }: DoubleDownProps) {
   return (
     <div className="w-full max-w-sm animate-pop">
       <div className="glass rounded-2xl p-6 text-center">
@@ -46,25 +48,40 @@ export default function DoubleDown({ onDoubleDown, isActive, category, difficult
         </p>
 
         {!isActive ? (
-          <button
-            onClick={onDoubleDown}
-            className="w-full py-4 rounded-xl font-bold text-base text-white
-                       bg-gradient-to-r from-yellow-500 to-amber-600
-                       btn-press transition-all
-                       shadow-lg shadow-yellow-500/20"
-          >
-            💰 Double Down!
-          </button>
+          <div className="space-y-3">
+            <button
+              onClick={onDoubleDown}
+              className="w-full py-4 rounded-xl font-bold text-base text-white
+                         bg-gradient-to-r from-yellow-500 to-amber-600
+                         btn-press transition-all
+                         shadow-lg shadow-yellow-500/20"
+            >
+              💰 Double Down!
+            </button>
+            <button
+              onClick={onSkip}
+              className="w-full py-3 rounded-xl font-semibold text-sm text-gray-400
+                         bg-white/5 border border-white/10
+                         btn-press transition-all hover:bg-white/10"
+            >
+              Skip — just show the question
+            </button>
+          </div>
         ) : (
-          <div className="py-4 rounded-xl font-bold text-base text-yellow-400
-                          bg-yellow-500/10 border border-yellow-500/30">
-            💰 Doubled Down! Good luck...
+          <div className="space-y-3">
+            <div className="py-4 rounded-xl font-bold text-base text-yellow-400
+                            bg-yellow-500/10 border border-yellow-500/30">
+              💰 Doubled Down! Good luck...
+            </div>
+            <button
+              onClick={onCancel}
+              className="w-full py-2 rounded-xl text-sm text-gray-500
+                         btn-press transition-all hover:text-gray-300"
+            >
+              Cancel double down
+            </button>
           </div>
         )}
-
-        <p className="text-xs text-gray-600 mt-3">
-          Or just wait — question will appear automatically
-        </p>
       </div>
     </div>
   );

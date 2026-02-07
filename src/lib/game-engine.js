@@ -467,6 +467,30 @@ function createGameEngine() {
       }
     },
 
+    levelUp(roomCode) {
+      const room = rooms.get(roomCode);
+      if (!room) return null;
+      if (room.currentDifficulty < 5) {
+        room.currentDifficulty++;
+        console.log(`[Difficulty] ↑ Player chose to level up to ${room.currentDifficulty}`);
+      }
+      return room.currentDifficulty;
+    },
+
+    getDifficulty(roomCode) {
+      const room = rooms.get(roomCode);
+      return room ? room.currentDifficulty : 1;
+    },
+
+    cancelDoubleDown(socketId, roomCode) {
+      const room = rooms.get(roomCode);
+      if (!room) return;
+      const player = room.players.find((p) => p.socketId === socketId);
+      if (player) {
+        player.doubleDown = false;
+      }
+    },
+
     submitAnswer(socketId, roomCode, answerIndex) {
       const room = rooms.get(roomCode);
       if (!room || room.status !== 'playing') throw new Error('Game not active');
@@ -547,14 +571,12 @@ function createGameEngine() {
         };
       });
 
-      // ─── Adaptive difficulty adjustment ───
-      // If majority got it right → harder. If majority got it wrong → easier.
+      // ─── Difficulty stays at current level unless player opts in ───
+      // Difficulty is now player-controlled via 'level-up' socket event.
+      // We only auto-drop if the player gets it wrong to keep it fun.
       if (totalAnswered > 0) {
         const correctRatio = correctCount / totalAnswered;
-        if (correctRatio >= 0.5 && room.currentDifficulty < 5) {
-          room.currentDifficulty++;
-          console.log(`[Difficulty] ↑ Bumped to ${room.currentDifficulty} (${Math.round(correctRatio*100)}% correct)`);
-        } else if (correctRatio < 0.5 && room.currentDifficulty > 1) {
+        if (correctRatio < 0.5 && room.currentDifficulty > 1) {
           room.currentDifficulty--;
           console.log(`[Difficulty] ↓ Dropped to ${room.currentDifficulty} (${Math.round(correctRatio*100)}% correct)`);
         }
@@ -569,6 +591,7 @@ function createGameEngine() {
         questionNumber: room.currentQuestion,
         totalQuestions: room.totalQuestions,
         difficulty: q.difficulty,
+        currentDifficulty: room.currentDifficulty,
       };
     },
 
@@ -578,6 +601,8 @@ function createGameEngine() {
 
       room.status = 'finished';
       if (room._timer) clearTimeout(room._timer);
+      if (room._ddTimer) clearTimeout(room._ddTimer);
+      if (room._resultTimer) clearTimeout(room._resultTimer);
 
       const finalResults = room.players
         .map((p) => ({

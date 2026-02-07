@@ -70,6 +70,7 @@ export default function PlayPage() {
   const [timerTotal, setTimerTotal] = useState(0);
   const [myResult, setMyResult] = useState<PlayerResult | null>(null);
   const [questionInfo, setQuestionInfo] = useState<{ number: number; total: number; difficulty: number; category: string } | null>(null);
+  const [currentDifficulty, setCurrentDifficulty] = useState(1);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerStartRef = useRef<number>(0);
@@ -127,10 +128,11 @@ export default function PlayPage() {
       startClientTimer(data.timeMs);
     });
 
-    socket.on('question-result', (data: QuestionResult) => {
+    socket.on('question-result', (data: QuestionResult & { currentDifficulty?: number }) => {
       stopTimer();
       setPhase('result');
       setResult(data);
+      if (data.currentDifficulty) setCurrentDifficulty(data.currentDifficulty);
       const me = data.playerResults.find((p) => p.name === playerName);
       if (me) setMyResult(me);
     });
@@ -141,11 +143,16 @@ export default function PlayPage() {
       setGameOver(data);
     });
 
+    socket.on('difficulty-changed', (data: { difficulty: number }) => {
+      setCurrentDifficulty(data.difficulty);
+    });
+
     return () => {
       socket.off('double-down-phase');
       socket.off('next-question');
       socket.off('question-result');
       socket.off('game-over');
+      socket.off('difficulty-changed');
       stopTimer();
     };
   }, [playerName, startClientTimer, stopTimer, user]);
@@ -154,6 +161,22 @@ export default function PlayPage() {
     const socket = getSocket();
     socket.emit('double-down', { roomCode });
     setDoubleDown(true);
+  }, [roomCode]);
+
+  const handleSkipDoubleDown = useCallback(() => {
+    // Skip the double-down phase — just wait for the question
+    // No need to emit anything, the server will send the question on its timer
+  }, []);
+
+  const handleCancelDoubleDown = useCallback(() => {
+    const socket = getSocket();
+    socket.emit('cancel-double-down', { roomCode });
+    setDoubleDown(false);
+  }, [roomCode]);
+
+  const handleLevelUp = useCallback(() => {
+    const socket = getSocket();
+    socket.emit('level-up', { roomCode }, () => {});
   }, [roomCode]);
 
   const handleAnswer = useCallback((index: number) => {
@@ -167,7 +190,9 @@ export default function PlayPage() {
   const difficultyColor = (d: number) => ['', 'text-green-400', 'text-blue-400', 'text-yellow-400', 'text-orange-400', 'text-red-400'][d] || '';
   const categoryIcon = (c: string) => {
     const icons: Record<string, string> = {
-      debut: '🎬', member: '👤', song: '🎵', group_fact: '📋', award: '🏆',
+      debut: '🎬', member: '👤', song: '🎵', song_group: '🎵', song_year: '📅',
+      song_album: '💿', song_not: '🎵', group_song: '🎵',
+      group_fact: '📋', award: '🏆', cross_group: '🔀',
       face_recognition: '📸', audio_recognition: '🎧',
     };
     return icons[c] || '❓';
@@ -274,6 +299,8 @@ export default function PlayPage() {
         {/* Double Down Card */}
         <DoubleDown
           onDoubleDown={handleDoubleDown}
+          onSkip={handleSkipDoubleDown}
+          onCancel={handleCancelDoubleDown}
           isActive={doubleDown}
           category={questionInfo.category}
           difficulty={questionInfo.difficulty}
@@ -347,6 +374,17 @@ export default function PlayPage() {
                 <p className="text-xs text-yellow-400 mt-1 font-semibold">
                   {myResult.isCorrect ? '💰 Double Down pays off!' : '💸 Double Down backfired!'}
                 </p>
+              )}
+              {/* Level Up button — only show after correct answer and if not already at max */}
+              {myResult.isCorrect && currentDifficulty < 5 && (
+                <button
+                  onClick={handleLevelUp}
+                  className="mt-3 px-4 py-2 rounded-lg text-xs font-bold text-white
+                             bg-gradient-to-r from-green-500 to-emerald-600
+                             btn-press transition-all shadow-lg shadow-green-500/20"
+                >
+                  ⬆️ Level Up! (currently {['', 'Easy', 'Medium', 'Hard', 'Very Hard', 'Expert'][currentDifficulty]})
+                </button>
               )}
             </div>
           </div>

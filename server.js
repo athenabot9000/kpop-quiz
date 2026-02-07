@@ -318,6 +318,28 @@ app.prepare().then(() => {
       }
     });
 
+    // ─── Cancel Double Down ───
+    socket.on('cancel-double-down', ({ roomCode }) => {
+      try {
+        engine.cancelDoubleDown(socket.id, roomCode);
+      } catch (err) {
+        console.error(`[CancelDoubleDown] Error: ${err.message}`);
+      }
+    });
+
+    // ─── Level Up (player opts into harder questions) ───
+    socket.on('level-up', ({ roomCode }, callback) => {
+      try {
+        const newDifficulty = engine.levelUp(roomCode);
+        if (newDifficulty !== null) {
+          io.to(roomCode).emit('difficulty-changed', { difficulty: newDifficulty });
+        }
+        if (callback) callback({ success: true, difficulty: newDifficulty });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
     // ─── Submit Answer ───
     socket.on('submit-answer', ({ roomCode, answerIndex }, callback) => {
       try {
@@ -377,9 +399,19 @@ app.prepare().then(() => {
   });
 
   // ─── Server-authoritative question flow ───
+  // Clear ALL pending timers for a room to prevent overlapping questions
+  function clearRoomTimers(room) {
+    if (room._timer) { clearTimeout(room._timer); room._timer = null; }
+    if (room._ddTimer) { clearTimeout(room._ddTimer); room._ddTimer = null; }
+    if (room._resultTimer) { clearTimeout(room._resultTimer); room._resultTimer = null; }
+  }
+
   function sendNextQuestion(roomCode) {
     const room = engine.getRoom(roomCode);
     if (!room || room.status !== 'playing') return;
+
+    // Clear any stale timers first
+    clearRoomTimers(room);
 
     const question = engine.getNextQuestion(roomCode);
     if (!question) {
@@ -415,6 +447,9 @@ app.prepare().then(() => {
     // Reset double-downs for new question
     engine.resetRound(roomCode);
 
+    // Track which question this timer sequence is for (prevents stale timer callbacks)
+    const questionNum = room.currentQuestion;
+
     // Send double-down phase (5 seconds)
     io.to(roomCode).emit('double-down-phase', {
       questionNumber: room.currentQuestion,
@@ -424,7 +459,11 @@ app.prepare().then(() => {
       timeMs: 5000,
     });
 
-    setTimeout(() => {
+    room._ddTimer = setTimeout(() => {
+      // Guard: make sure we're still on the same question
+      if (!room || room.status !== 'playing' || room.currentQuestion !== questionNum) return;
+      room._ddTimer = null;
+
       // Send the actual question (with type and media for face/audio)
       io.to(roomCode).emit('next-question', {
         questionNumber: room.currentQuestion,
@@ -443,6 +482,7 @@ app.prepare().then(() => {
 
       // After 10 seconds, reveal answer
       room._timer = setTimeout(() => {
+        if (!room || room.status !== 'playing' || room.currentQuestion !== questionNum) return;
         revealAnswer(roomCode);
       }, 10000);
     }, 5000);
@@ -452,12 +492,16 @@ app.prepare().then(() => {
     const room = engine.getRoom(roomCode);
     if (!room || room.status !== 'playing') return;
 
+    // Clear the answer timer
+    if (room._timer) { clearTimeout(room._timer); room._timer = null; }
+
     const result = engine.calculateScores(roomCode);
     io.to(roomCode).emit('question-result', result);
     console.log(`[Game] Q${room.currentQuestion} result in ${roomCode}`);
 
     // Wait 4 seconds showing results, then next question
-    setTimeout(() => {
+    room._resultTimer = setTimeout(() => {
+      room._resultTimer = null;
       sendNextQuestion(roomCode);
     }, 4000);
   }
