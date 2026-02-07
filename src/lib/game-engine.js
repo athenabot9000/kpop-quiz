@@ -11,8 +11,8 @@ function getDb() {
 
 // Quick Quiz group config: name variants for text matching + DB group IDs
 const QUICK_QUIZ_GROUPS = {
-  names: ['ENHYPEN', 'TWICE', 'BABYMONSTER', 'Baby Monster', 'BLACKPINK', 'KATSEYE', 'Katseye'],
-  ids: [59, 208, 275], // ENHYPEN=59, BLACKPINK=208, TWICE=275 (BABYMONSTER + KATSEYE added dynamically)
+  names: ['ENHYPEN', 'TWICE', 'BABYMONSTER', 'Baby Monster', 'BLACKPINK', 'KATSEYE', 'Katseye', 'BTS', 'BTS (Bangtan Boys)'],
+  ids: [59, 208, 275, 35], // ENHYPEN=59, BLACKPINK=208, TWICE=275, BTS=35 (BABYMONSTER + KATSEYE added dynamically)
 };
 
 // Resolve quick quiz group IDs at startup (includes any newly added groups)
