@@ -9,13 +9,33 @@ function getDb() {
   return new Database(DB_PATH, { readonly: true });
 }
 
+// Quick Quiz group config: name variants for text matching + DB group IDs
+const QUICK_QUIZ_GROUPS = {
+  names: ['ENHYPEN', 'TWICE', 'BABYMONSTER', 'Baby Monster', 'BLACKPINK', 'KATSEYE', 'Katseye'],
+  ids: [59, 208, 275], // ENHYPEN=59, BLACKPINK=208, TWICE=275 (BABYMONSTER + KATSEYE added dynamically)
+};
+
+// Resolve quick quiz group IDs at startup (includes any newly added groups)
+function getQuickQuizGroupIds() {
+  const db = getDb();
+  try {
+    const rows = db.prepare(
+      `SELECT id FROM groups WHERE UPPER(name) IN (${QUICK_QUIZ_GROUPS.names.map(() => '?').join(',')})`,
+    ).all(...QUICK_QUIZ_GROUPS.names.map(n => n.toUpperCase()));
+    return rows.map(r => r.id);
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * Load questions bucketed by difficulty.
  * Returns an object: { 1: [...], 2: [...], 3: [...], 4: [...], 5: [...] }
  * Includes text, face, and audio question types.
  * Excludes questions with em-dash correct answers (bad data).
+ * @param {string} mode - 'all' for Energy Exam, 'quick' for Quick Quiz (5 groups only)
  */
-function loadQuestionPool() {
+function loadQuestionPool(mode = 'all') {
   const db = getDb();
   try {
     const rows = db
@@ -31,8 +51,30 @@ function loadQuestionPool() {
       )
       .all();
 
+    // If quick quiz, filter to only questions about the 5 groups
+    let filtered = rows;
+    if (mode === 'quick') {
+      const groupIds = getQuickQuizGroupIds();
+      const namePatterns = QUICK_QUIZ_GROUPS.names.map(n => n.toUpperCase());
+
+      filtered = rows.filter(row => {
+        // Check metadata group_id or correct_group_id
+        if (row.metadata_json) {
+          try {
+            const meta = JSON.parse(row.metadata_json);
+            if (meta.group_id && groupIds.includes(meta.group_id)) return true;
+            if (meta.correct_group_id && groupIds.includes(meta.correct_group_id)) return true;
+          } catch {}
+        }
+        // Check question text and answer for group name mentions
+        const qt = (row.question_text || '').toUpperCase();
+        const ca = (row.correct_answer || '').toUpperCase();
+        return namePatterns.some(name => qt.includes(name) || ca === name);
+      });
+    }
+
     const pool = { 1: [], 2: [], 3: [], 4: [], 5: [] };
-    for (const row of rows) {
+    for (const row of filtered) {
       const d = row.difficulty;
       if (d >= 1 && d <= 5 && pool[d]) {
         pool[d].push(row);
@@ -344,16 +386,17 @@ function createGameEngine() {
       throw new Error('Cannot rejoin — game in progress and you were not in it');
     },
 
-    startGame(socketId, roomCode) {
+    startGame(socketId, roomCode, mode = 'all') {
       const room = rooms.get(roomCode);
       if (!room) throw new Error('Room not found');
       if (room.hostSocketId !== socketId) throw new Error('Only the host can start the game');
       if (room.players.length < 1) throw new Error('Need at least 1 player');
 
-      // Load the full question pool, bucketed by difficulty
-      room.questionPool = loadQuestionPool();
+      // Load question pool based on game mode
+      room.gameMode = mode;
+      room.questionPool = loadQuestionPool(mode);
       room.currentDifficulty = 1; // Always start at easiest
-      room.totalQuestions = 15;
+      room.totalQuestions = mode === 'quick' ? 10 : 15;
       room.currentQuestion = 0;
       room.questions = []; // Will be built dynamically
       room.status = 'playing';

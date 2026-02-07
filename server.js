@@ -290,9 +290,10 @@ app.prepare().then(() => {
     });
 
     // ─── Start Game ───
-    socket.on('start-game', ({ roomCode }, callback) => {
+    socket.on('start-game', ({ roomCode, mode }, callback) => {
       try {
-        const result = engine.startGame(socket.id, roomCode);
+        const gameMode = mode === 'quick' ? 'quick' : 'all';
+        const result = engine.startGame(socket.id, roomCode, gameMode);
         io.to(roomCode).emit('game-started', {
           totalQuestions: result.totalQuestions,
         });

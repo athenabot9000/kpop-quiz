@@ -23,6 +23,7 @@ export default function LobbyPage() {
   const [isHost, setIsHost] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [gameMode, setGameMode] = useState<'quick' | 'all'>('quick');
 
   // Redirect if not authed
   useEffect(() => {
@@ -73,12 +74,12 @@ export default function LobbyPage() {
 
   const handleStart = useCallback(() => {
     const socket = getSocket();
-    socket.emit('start-game', { roomCode }, (res: any) => {
+    socket.emit('start-game', { roomCode, mode: gameMode }, (res: any) => {
       if (!res.success) {
         setError(res.error || 'Failed to start');
       }
     });
-  }, [roomCode]);
+  }, [roomCode, gameMode]);
 
   const copyCode = async () => {
     try {
@@ -172,6 +173,45 @@ export default function LobbyPage() {
         </div>
       )}
 
+      {/* Game Mode Selector (host only) */}
+      {isHost && (
+        <div className="w-full max-w-sm mb-4 animate-slide-up" style={{ animationDelay: '0.15s' }}>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 px-1">
+            Game Mode
+          </h2>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setGameMode('quick')}
+              className={`p-4 rounded-xl text-left transition-all btn-press border ${
+                gameMode === 'quick'
+                  ? 'bg-kpop-pink/10 border-kpop-pink/40 ring-1 ring-kpop-pink/20'
+                  : 'bg-kpop-card border-white/10 hover:border-white/20'
+              }`}
+            >
+              <div className="text-lg mb-1">⚡</div>
+              <p className="font-bold text-sm text-white">Quick Quiz</p>
+              <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                10 Qs · ENHYPEN, TWICE, BLACKPINK, BABYMONSTER, KATSEYE
+              </p>
+            </button>
+            <button
+              onClick={() => setGameMode('all')}
+              className={`p-4 rounded-xl text-left transition-all btn-press border ${
+                gameMode === 'all'
+                  ? 'bg-kpop-purple/10 border-kpop-purple/40 ring-1 ring-kpop-purple/20'
+                  : 'bg-kpop-card border-white/10 hover:border-white/20'
+              }`}
+            >
+              <div className="text-lg mb-1">🔥</div>
+              <p className="font-bold text-sm text-white">Energy Exam</p>
+              <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                15 Qs · All K-Pop groups
+              </p>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Start Button (host only) */}
       {isHost && (
         <button
@@ -184,7 +224,7 @@ export default function LobbyPage() {
                      animate-slide-up"
           style={{ animationDelay: '0.2s' }}
         >
-          🚀 Start Game
+          🚀 Start {gameMode === 'quick' ? 'Quick Quiz' : 'Energy Exam'}
         </button>
       )}
 
