@@ -9,17 +9,36 @@ function getDb() {
   return new Database(DB_PATH, { readonly: true });
 }
 
-function loadQuestions(count = 15) {
+/**
+ * Load questions bucketed by difficulty.
+ * Returns an object: { 1: [...], 2: [...], 3: [...], 4: [...], 5: [...] }
+ * Includes text, face, and audio question types.
+ * Excludes questions with em-dash correct answers (bad data).
+ */
+function loadQuestionPool() {
   const db = getDb();
   try {
-    const questions = db
+    const rows = db
       .prepare(
-        `SELECT id, type, difficulty, category, question_text, correct_answer, metadata_json
-         FROM questions WHERE type = 'text'
-         ORDER BY RANDOM() LIMIT ?`
+        `SELECT id, type, difficulty, category, question_text, correct_answer, metadata_json,
+                face_image_id, audio_clip_id
+         FROM questions
+         WHERE correct_answer != '—'
+           AND correct_answer != '-'
+           AND correct_answer != ''
+           AND LENGTH(TRIM(correct_answer)) > 0
+         ORDER BY RANDOM()`
       )
-      .all(count);
-    return questions;
+      .all();
+
+    const pool = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+    for (const row of rows) {
+      const d = row.difficulty;
+      if (d >= 1 && d <= 5 && pool[d]) {
+        pool[d].push(row);
+      }
+    }
+    return pool;
   } finally {
     db.close();
   }
@@ -29,8 +48,22 @@ function generateWrongAnswers(question) {
   const db = getDb();
   try {
     const meta = question.metadata_json ? JSON.parse(question.metadata_json) : {};
-    const pool = meta.options_pool || '';
     const correct = question.correct_answer;
+
+    // ─── FIRST: check if wrong_answers are embedded in metadata ───
+    if (meta.wrong_answers && Array.isArray(meta.wrong_answers) && meta.wrong_answers.length >= 3) {
+      // Filter out any invalid answers (dashes, empty, duplicates of correct)
+      const valid = meta.wrong_answers.filter(
+        (a) => a && a !== '—' && a !== '-' && a.trim().length > 0 && a !== correct
+      );
+      if (valid.length >= 3) {
+        // Shuffle and return 3
+        return valid.sort(() => Math.random() - 0.5).slice(0, 3);
+      }
+    }
+
+    // ─── SECOND: use options_pool logic ───
+    const pool = meta.options_pool || '';
     let candidates = [];
 
     if (pool.startsWith('groups_female')) {
@@ -44,9 +77,7 @@ function generateWrongAnswers(question) {
         .all('male', correct)
         .map((r) => r.name);
     } else if (pool.startsWith('members_')) {
-      // Get members from same group or similar groups
       const groupName = pool.replace('members_', '').toUpperCase();
-      // First try to get from the same group
       const group = db.prepare('SELECT id FROM groups WHERE UPPER(name) LIKE ?').get(`%${groupName}%`);
       if (group) {
         candidates = db
@@ -54,18 +85,18 @@ function generateWrongAnswers(question) {
           .all(group.id, correct)
           .map((r) => r.stage_name);
       }
-      // If not enough, add from same gender
       if (candidates.length < 3) {
         const gender = db.prepare('SELECT gender FROM artists WHERE stage_name = ?').get(correct);
         const g = gender ? gender.gender : 'female';
-        const more = db
-          .prepare('SELECT DISTINCT stage_name FROM artists WHERE gender = ? AND stage_name != ? AND stage_name NOT IN (' + candidates.map(() => '?').join(',') + ') ORDER BY RANDOM() LIMIT 10')
-          .all(g, correct, ...candidates)
-          .map((r) => r.stage_name);
+        const placeholders = candidates.map(() => '?').join(',');
+        const query = placeholders
+          ? `SELECT DISTINCT stage_name FROM artists WHERE gender = ? AND stage_name != ? AND stage_name NOT IN (${placeholders}) ORDER BY RANDOM() LIMIT 10`
+          : `SELECT DISTINCT stage_name FROM artists WHERE gender = ? AND stage_name != ? ORDER BY RANDOM() LIMIT 10`;
+        const params = placeholders ? [g, correct, ...candidates] : [g, correct];
+        const more = db.prepare(query).all(...params).map((r) => r.stage_name);
         candidates = [...candidates, ...more];
       }
     } else if (pool === 'members_bts_real' || pool === 'korean_names_female') {
-      // Real names — use a static pool
       const realNames = [
         'Kim Nam-joon', 'Kim Seok-jin', 'Min Yoon-gi', 'Jung Ho-seok',
         'Park Ji-min', 'Kim Tae-hyung', 'Jeon Jung-kook',
@@ -98,7 +129,6 @@ function generateWrongAnswers(question) {
       ];
       candidates = companies.filter((c) => c !== correct).sort(() => Math.random() - 0.5);
     } else if (pool.startsWith('songs_')) {
-      // Songs from a specific group
       const groupKey = pool.replace('songs_', '');
       const groupMap = {
         'aespa': 'aespa', 'bp': 'BLACKPINK', 'blackpink': 'BLACKPINK',
@@ -113,12 +143,13 @@ function generateWrongAnswers(question) {
           .all(group.id, correct)
           .map((r) => r.title);
       }
-      // Pad with songs from other groups if needed
       if (candidates.length < 3) {
-        const more = db
-          .prepare('SELECT title FROM songs WHERE title != ? AND title NOT IN (' + candidates.map(() => '?').join(',') + ') ORDER BY RANDOM() LIMIT 10')
-          .all(correct, ...candidates)
-          .map((r) => r.title);
+        const placeholders = candidates.map(() => '?').join(',');
+        const query = placeholders
+          ? `SELECT title FROM songs WHERE title != ? AND title NOT IN (${placeholders}) ORDER BY RANDOM() LIMIT 10`
+          : `SELECT title FROM songs WHERE title != ? ORDER BY RANDOM() LIMIT 10`;
+        const params = placeholders ? [correct, ...candidates] : [correct];
+        const more = db.prepare(query).all(...params).map((r) => r.title);
         candidates = [...candidates, ...more];
       }
     } else if (pool === 'positions') {
@@ -137,6 +168,13 @@ function generateWrongAnswers(question) {
         'Hyunjin and Changbin', 'Seungmin and I.N',
       ];
       candidates = pairs.filter((p) => p !== correct).sort(() => Math.random() - 0.5);
+    } else if (pool === 'albums') {
+      // Album questions — use wrong_answers from metadata if available
+      if (meta.wrong_answers && meta.wrong_answers.length > 0) {
+        candidates = meta.wrong_answers
+          .filter((a) => a && a !== '—' && a !== '-' && a.trim().length > 0 && a !== correct)
+          .sort(() => Math.random() - 0.5);
+      }
     } else {
       // Fallback: use groups
       candidates = db
@@ -145,7 +183,46 @@ function generateWrongAnswers(question) {
         .map((r) => r.name);
     }
 
-    return candidates.slice(0, 3);
+    // ─── FINAL: type-match validation ───
+    // If correct answer looks like a year/number, ensure wrong answers are also numbers
+    const correctIsYear = /^\d{4}$/.test(correct);
+    const correctIsNumber = /^\d+$/.test(correct);
+
+    if (correctIsYear) {
+      // Filter to only year-like candidates
+      const yearCandidates = candidates.filter((c) => /^\d{4}$/.test(c));
+      if (yearCandidates.length >= 3) {
+        return yearCandidates.slice(0, 3);
+      }
+      // Generate plausible years around the correct year
+      const baseYear = parseInt(correct);
+      const fallbackYears = [];
+      for (let y = baseYear - 4; y <= baseYear + 4; y++) {
+        if (y.toString() !== correct) fallbackYears.push(y.toString());
+      }
+      return fallbackYears.sort(() => Math.random() - 0.5).slice(0, 3);
+    }
+
+    if (correctIsNumber && !correctIsYear) {
+      const numCandidates = candidates.filter((c) => /^\d+$/.test(c));
+      if (numCandidates.length >= 3) {
+        return numCandidates.slice(0, 3);
+      }
+      // Generate nearby numbers
+      const base = parseInt(correct);
+      const fallbackNums = [];
+      for (let n = Math.max(1, base - 4); n <= base + 4; n++) {
+        if (n.toString() !== correct) fallbackNums.push(n.toString());
+      }
+      return fallbackNums.sort(() => Math.random() - 0.5).slice(0, 3);
+    }
+
+    // Filter out any dash/empty answers from candidates
+    const cleanCandidates = candidates.filter(
+      (c) => c && c !== '—' && c !== '-' && c.trim().length > 0 && c !== correct
+    );
+
+    return cleanCandidates.slice(0, 3);
   } finally {
     db.close();
   }
@@ -157,7 +234,7 @@ const rooms = new Map();
 const playerRooms = new Map(); // socketId → Set<roomCode>
 
 function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 4; i++) {
     code += chars[Math.floor(Math.random() * chars.length)];
@@ -206,6 +283,8 @@ function createGameEngine() {
         currentQuestion: 0,
         totalQuestions: 0,
         currentQuestionData: null,
+        currentDifficulty: 1, // Start easy!
+        questionPool: null,
         timerStart: null,
         _timer: null,
       });
@@ -259,7 +338,6 @@ function createGameEngine() {
         return { player: existing, players: room.players, isHost: existing.isHost, status: room.status };
       }
 
-      // Treat as new join if in lobby
       if (room.status === 'lobby') {
         return this.joinRoom(socketId, roomCode, playerName);
       }
@@ -272,46 +350,95 @@ function createGameEngine() {
       if (room.hostSocketId !== socketId) throw new Error('Only the host can start the game');
       if (room.players.length < 1) throw new Error('Need at least 1 player');
 
-      const questionCount = Math.min(15, 25); // use all available or cap at 15
-      const rawQuestions = loadQuestions(questionCount);
-
-      room.questions = rawQuestions.map((q) => {
-        const wrong = generateWrongAnswers(q);
-        const answers = [q.correct_answer, ...wrong.slice(0, 3)];
-        // Ensure we have exactly 4 answers
-        while (answers.length < 4) answers.push('—');
-        // Shuffle
-        const correctIndex = 0;
-        const shuffled = answers
-          .map((a, i) => ({ answer: a, isCorrect: i === correctIndex }))
-          .sort(() => Math.random() - 0.5);
-
-        return {
-          id: q.id,
-          questionText: q.question_text,
-          difficulty: q.difficulty,
-          category: q.category,
-          answers: shuffled.map((s) => s.answer),
-          correctIndex: shuffled.findIndex((s) => s.isCorrect),
-          correctAnswer: q.correct_answer,
-        };
-      });
-
-      room.totalQuestions = room.questions.length;
+      // Load the full question pool, bucketed by difficulty
+      room.questionPool = loadQuestionPool();
+      room.currentDifficulty = 1; // Always start at easiest
+      room.totalQuestions = 15;
       room.currentQuestion = 0;
+      room.questions = []; // Will be built dynamically
       room.status = 'playing';
+
+      console.log(`[Game] Starting with adaptive difficulty. Pool sizes: ${
+        Object.entries(room.questionPool).map(([d, qs]) => `D${d}:${qs.length}`).join(', ')
+      }`);
 
       return { totalQuestions: room.totalQuestions };
     },
 
+    /**
+     * Pick the next question based on current adaptive difficulty.
+     * Falls back to adjacent difficulties if current bucket is empty.
+     */
     getNextQuestion(roomCode) {
       const room = rooms.get(roomCode);
       if (!room) return null;
-
-      if (room.currentQuestion >= room.questions.length) return null;
+      if (room.currentQuestion >= room.totalQuestions) return null;
 
       room.currentQuestion++;
-      room.currentQuestionData = room.questions[room.currentQuestion - 1];
+
+      // Pick from current difficulty, fall back to neighbors
+      const pool = room.questionPool;
+      const diff = room.currentDifficulty;
+      let q = null;
+
+      // Try current difficulty first, then expand outward
+      const tryOrder = [diff];
+      for (let offset = 1; offset <= 4; offset++) {
+        if (diff + offset <= 5) tryOrder.push(diff + offset);
+        if (diff - offset >= 1) tryOrder.push(diff - offset);
+      }
+
+      for (const d of tryOrder) {
+        if (pool[d] && pool[d].length > 0) {
+          q = pool[d].shift(); // Take one question from this difficulty bucket
+          break;
+        }
+      }
+
+      if (!q) return null; // Truly exhausted (shouldn't happen with 8k+ questions)
+
+      // Generate wrong answers and build the question
+      const wrong = generateWrongAnswers(q);
+      const answers = [q.correct_answer, ...wrong.slice(0, 3)];
+      while (answers.length < 4) {
+        // Pad with plausible filler if needed (shouldn't happen after fixes)
+        answers.push('Unknown');
+      }
+
+      const shuffled = answers
+        .map((a, i) => ({ answer: a, isCorrect: i === 0 }))
+        .sort(() => Math.random() - 0.5);
+
+      // Build media URL for face/audio questions
+      let mediaUrl = null;
+      let questionType = q.type || 'text';
+      const meta = q.metadata_json ? JSON.parse(q.metadata_json) : {};
+
+      if (q.type === 'face') {
+        // Use the photo_path from metadata (static file served from /images/members/)
+        if (meta.photo_path) {
+          mediaUrl = meta.photo_path;
+        } else if (q.face_image_id) {
+          mediaUrl = `/api/media/face/${q.face_image_id}`;
+        }
+      } else if (q.type === 'audio') {
+        if (q.audio_clip_id) {
+          mediaUrl = `/api/media/audio/${q.audio_clip_id}`;
+        }
+      }
+
+      room.currentQuestionData = {
+        id: q.id,
+        questionText: q.question_text,
+        difficulty: q.difficulty,
+        category: q.category,
+        type: questionType,
+        mediaUrl: mediaUrl,
+        answers: shuffled.map((s) => s.answer),
+        correctIndex: shuffled.findIndex((s) => s.isCorrect),
+        correctAnswer: q.correct_answer,
+      };
+
       return room.currentQuestionData;
     },
 
@@ -351,7 +478,6 @@ function createGameEngine() {
       player.currentAnswer = answerIndex;
       player.answerTime = Date.now() - room.timerStart;
 
-      // Check if all connected players have answered
       const connectedPlayers = room.players.filter((p) => p.connected);
       const allAnswered = connectedPlayers.every((p) => p.currentAnswer !== null);
 
@@ -365,14 +491,21 @@ function createGameEngine() {
       const q = room.currentQuestionData;
       const basePoints = [0, 100, 200, 300, 400, 500][q.difficulty] || 100;
 
+      // Track how many players got it right for difficulty adjustment
+      let correctCount = 0;
+      let totalAnswered = 0;
+
       const playerResults = room.players.map((p) => {
         const isCorrect = p.currentAnswer === q.correctIndex;
         let pointsEarned = 0;
 
+        if (p.currentAnswer !== null) totalAnswered++;
+
         if (isCorrect) {
+          correctCount++;
           pointsEarned = basePoints;
 
-          // Speed bonus: up to 50% for fast answers (0-10 seconds)
+          // Speed bonus: up to 50% for fast answers
           if (p.answerTime !== null) {
             const speedFraction = Math.max(0, 1 - p.answerTime / 10000);
             const speedBonus = Math.round(basePoints * 0.5 * speedFraction);
@@ -393,7 +526,6 @@ function createGameEngine() {
 
           p.correctCount++;
         } else {
-          // Wrong or no answer
           p.streak = 0;
           if (p.doubleDown) {
             pointsEarned = -basePoints;
@@ -415,7 +547,19 @@ function createGameEngine() {
         };
       });
 
-      // Sort by score descending
+      // ─── Adaptive difficulty adjustment ───
+      // If majority got it right → harder. If majority got it wrong → easier.
+      if (totalAnswered > 0) {
+        const correctRatio = correctCount / totalAnswered;
+        if (correctRatio >= 0.5 && room.currentDifficulty < 5) {
+          room.currentDifficulty++;
+          console.log(`[Difficulty] ↑ Bumped to ${room.currentDifficulty} (${Math.round(correctRatio*100)}% correct)`);
+        } else if (correctRatio < 0.5 && room.currentDifficulty > 1) {
+          room.currentDifficulty--;
+          console.log(`[Difficulty] ↓ Dropped to ${room.currentDifficulty} (${Math.round(correctRatio*100)}% correct)`);
+        }
+      }
+
       playerResults.sort((a, b) => b.totalScore - a.totalScore);
 
       return {
@@ -424,6 +568,7 @@ function createGameEngine() {
         playerResults,
         questionNumber: room.currentQuestion,
         totalQuestions: room.totalQuestions,
+        difficulty: q.difficulty,
       };
     },
 
@@ -469,7 +614,6 @@ function createGameEngine() {
           affected.push(roomCode);
         }
 
-        // Clean up empty rooms
         const connectedPlayers = room.players.filter((p) => p.connected);
         if (connectedPlayers.length === 0) {
           if (room._timer) clearTimeout(room._timer);

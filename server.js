@@ -3,7 +3,9 @@ const { parse } = require('url');
 const next = require('next');
 const { Server } = require('socket.io');
 const { createGameEngine } = require('./src/lib/game-engine');
-const { runMigrations } = require('./src/lib/db');
+const { runMigrations, getDb: getDbFromLib } = require('./src/lib/db');
+const Database = require('better-sqlite3');
+const dbPath = require('path').join(__dirname, 'data/kpop_quiz.db');
 const {
   registerUser,
   loginUser,
@@ -158,6 +160,56 @@ app.prepare().then(() => {
           stats: stats || { games_played: 0, total_points: 0, wins: 0, best_streak: 0, best_score: 0, correct_answers: 0, total_answers: 0 },
           history,
         });
+      }
+
+      // GET /api/media/face/:id — serve face images from DB
+      if (pathname.startsWith('/api/media/face/') && req.method === 'GET') {
+        const id = parseInt(pathname.split('/')[4]);
+        if (isNaN(id)) {
+          res.writeHead(400);
+          return res.end('Invalid ID');
+        }
+        const db = new Database(dbPath, { readonly: true });
+        try {
+          const row = db.prepare('SELECT image, format FROM face_images WHERE id = ?').get(id);
+          if (!row) {
+            res.writeHead(404);
+            return res.end('Not found');
+          }
+          const mime = row.format === 'png' ? 'image/png' : row.format === 'webp' ? 'image/webp' : 'image/jpeg';
+          res.writeHead(200, {
+            'Content-Type': mime,
+            'Cache-Control': 'public, max-age=86400',
+          });
+          return res.end(row.image);
+        } finally {
+          db.close();
+        }
+      }
+
+      // GET /api/media/audio/:id — serve audio clips from DB
+      if (pathname.startsWith('/api/media/audio/') && req.method === 'GET') {
+        const id = parseInt(pathname.split('/')[4]);
+        if (isNaN(id)) {
+          res.writeHead(400);
+          return res.end('Invalid ID');
+        }
+        const db = new Database(dbPath, { readonly: true });
+        try {
+          const row = db.prepare('SELECT clip, format FROM audio_clips WHERE id = ?').get(id);
+          if (!row) {
+            res.writeHead(404);
+            return res.end('Not found');
+          }
+          const mime = row.format === 'ogg' ? 'audio/ogg' : 'audio/mpeg';
+          res.writeHead(200, {
+            'Content-Type': mime,
+            'Cache-Control': 'public, max-age=86400',
+          });
+          return res.end(row.clip);
+        } finally {
+          db.close();
+        }
       }
 
       // GET /api/leaderboard
@@ -373,7 +425,7 @@ app.prepare().then(() => {
     });
 
     setTimeout(() => {
-      // Send the actual question
+      // Send the actual question (with type and media for face/audio)
       io.to(roomCode).emit('next-question', {
         questionNumber: room.currentQuestion,
         totalQuestions: room.totalQuestions,
@@ -381,6 +433,8 @@ app.prepare().then(() => {
         answers: question.answers,
         difficulty: question.difficulty,
         category: question.category,
+        type: question.type || 'text',
+        mediaUrl: question.mediaUrl || null,
         timeMs: 10000,
       });
 

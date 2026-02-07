@@ -28,6 +28,8 @@ interface QuestionData {
   difficulty: number;
   category: string;
   timeMs: number;
+  type?: 'text' | 'face' | 'audio';
+  mediaUrl?: string | null;
 }
 
 interface QuestionResult {
@@ -164,7 +166,10 @@ export default function PlayPage() {
   const difficultyLabel = (d: number) => ['', '⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'][d] || '';
   const difficultyColor = (d: number) => ['', 'text-green-400', 'text-blue-400', 'text-yellow-400', 'text-orange-400', 'text-red-400'][d] || '';
   const categoryIcon = (c: string) => {
-    const icons: Record<string, string> = { debut: '🎬', member: '👤', song: '🎵', group_fact: '📋', award: '🏆' };
+    const icons: Record<string, string> = {
+      debut: '🎬', member: '👤', song: '🎵', group_fact: '📋', award: '🏆',
+      face_recognition: '📸', audio_recognition: '🎧',
+    };
     return icons[c] || '❓';
   };
 
@@ -317,6 +322,8 @@ export default function PlayPage() {
           correctIndex={result?.correctIndex ?? null}
           phase={phase}
           onAnswer={handleAnswer}
+          type={question.type || 'text'}
+          mediaUrl={question.mediaUrl || null}
         />
 
         {/* Result feedback */}
