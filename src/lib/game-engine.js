@@ -351,7 +351,11 @@ function createGameEngine() {
       player.currentAnswer = answerIndex;
       player.answerTime = Date.now() - room.timerStart;
 
-      return { received: true };
+      // Check if all connected players have answered
+      const connectedPlayers = room.players.filter((p) => p.connected);
+      const allAnswered = connectedPlayers.every((p) => p.currentAnswer !== null);
+
+      return { received: true, allAnswered };
     },
 
     calculateScores(roomCode) {

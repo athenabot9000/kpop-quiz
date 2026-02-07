@@ -271,6 +271,16 @@ app.prepare().then(() => {
       try {
         const result = engine.submitAnswer(socket.id, roomCode, answerIndex);
         callback({ success: true, received: true });
+
+        // If all players have answered, reveal immediately
+        if (result.allAnswered) {
+          const room = engine.getRoom(roomCode);
+          if (room && room._timer) {
+            clearTimeout(room._timer);
+            room._timer = null;
+          }
+          revealAnswer(roomCode);
+        }
       } catch (err) {
         callback({ success: false, error: err.message });
       }
