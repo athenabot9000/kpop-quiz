@@ -5,3 +5,4 @@ node_modules/
 data/users.db
 data/users.db-journal
 data/users.db-wal
+app
