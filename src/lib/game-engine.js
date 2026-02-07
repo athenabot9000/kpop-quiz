@@ -680,6 +680,55 @@ function createGameEngine() {
       return rooms.get(roomCode);
     },
 
+    /**
+     * Explicitly leave a room (for cleanup between games).
+     */
+    leaveRoom(socketId, roomCode) {
+      const room = rooms.get(roomCode);
+      if (!room) return;
+
+      // Remove player from room
+      room.players = room.players.filter((p) => p.socketId !== socketId);
+
+      // Remove from playerRooms tracking
+      const roomSet = playerRooms.get(socketId);
+      if (roomSet) {
+        roomSet.delete(roomCode);
+        if (roomSet.size === 0) playerRooms.delete(socketId);
+      }
+
+      // Delete empty rooms
+      if (room.players.length === 0) {
+        if (room._timer) clearTimeout(room._timer);
+        if (room._ddTimer) clearTimeout(room._ddTimer);
+        if (room._resultTimer) clearTimeout(room._resultTimer);
+        rooms.delete(roomCode);
+        console.log(`[Room] Deleted empty room ${roomCode}`);
+      }
+    },
+
+    /**
+     * Clean up finished rooms for a socket (called before creating a new room).
+     * The onLeave callback is called for each room code so the caller can socket.leave().
+     */
+    cleanupFinishedRooms(socketId, onLeave) {
+      const roomSet = playerRooms.get(socketId);
+      if (!roomSet) return;
+
+      const toRemove = [];
+      for (const roomCode of roomSet) {
+        const room = rooms.get(roomCode);
+        if (!room || room.status === 'finished') {
+          toRemove.push(roomCode);
+        }
+      }
+
+      for (const roomCode of toRemove) {
+        if (onLeave) onLeave(roomCode);
+        this.leaveRoom(socketId, roomCode);
+      }
+    },
+
     handleDisconnect(socketId) {
       const roomCodes = playerRooms.get(socketId);
       if (!roomCodes) return [];

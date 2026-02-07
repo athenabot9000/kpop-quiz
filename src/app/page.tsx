@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { getSocket } from '@/lib/socket';
+import { getSocket, leaveRoom } from '@/lib/socket';
 import Link from 'next/link';
 
 export default function HomePage() {
@@ -33,6 +33,12 @@ export default function HomePage() {
     if (!user) return;
     setError('');
     setActionLoading(true);
+
+    // Leave any previous room before creating a new one
+    const prevRoom = localStorage.getItem('kpop-quiz-room');
+    if (prevRoom) {
+      leaveRoom(prevRoom);
+    }
 
     const socket = getSocket();
     socket.emit('create-room', { playerName: user.displayName, mode: gameMode }, (res: any) => {

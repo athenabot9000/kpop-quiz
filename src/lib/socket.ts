@@ -20,3 +20,12 @@ export function disconnectSocket(): void {
     socket = null;
   }
 }
+
+/**
+ * Leave a room explicitly (cleanup between games).
+ */
+export function leaveRoom(roomCode: string): void {
+  if (socket && socket.connected) {
+    socket.emit('leave-room', { roomCode });
+  }
+}

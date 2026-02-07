@@ -71,17 +71,23 @@ function getUserFromRequest(req) {
 // ─── Set auth cookie ───
 function setAuthCookie(res, token) {
   const maxAge = 7 * 24 * 60 * 60; // 7 days
-  res.setHeader('Set-Cookie', `kpop-auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`);
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `kpop-auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`);
 }
 
 // ─── Clear auth cookie ───
 function clearAuthCookie(res) {
-  res.setHeader('Set-Cookie', 'kpop-auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `kpop-auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
 }
 
 // ─── JSON response helper ───
 function jsonResponse(res, statusCode, data) {
-  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+    'Vary': 'Cookie',
+  });
   res.end(JSON.stringify(data));
 }
 
@@ -252,9 +258,25 @@ app.prepare().then(() => {
       if (callback) callback({ success: true });
     });
 
+    // ─── Leave Room (explicit cleanup) ───
+    socket.on('leave-room', ({ roomCode }, callback) => {
+      try {
+        engine.leaveRoom(socket.id, roomCode);
+        socket.leave(roomCode);
+        if (callback) callback({ success: true });
+      } catch (err) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
     // ─── Create Room ───
     socket.on('create-room', ({ playerName, mode }, callback) => {
       try {
+        // Clean up any old finished rooms this socket is in
+        engine.cleanupFinishedRooms(socket.id, (roomCode) => {
+          socket.leave(roomCode);
+        });
+
         const result = engine.createRoom(socket.id, playerName);
         socket.join(result.roomCode);
 

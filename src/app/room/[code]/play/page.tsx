@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { getSocket } from '@/lib/socket';
+import { getSocket, leaveRoom } from '@/lib/socket';
 import QuestionCard from '@/components/QuestionCard';
 import Timer from '@/components/Timer';
 import ScoreBoard from '@/components/ScoreBoard';
@@ -253,7 +253,10 @@ export default function PlayPage() {
 
         <div className="w-full max-w-sm space-y-3">
           <button
-            onClick={() => router.push('/')}
+            onClick={() => {
+              leaveRoom(roomCode);
+              router.push('/');
+            }}
             className="w-full py-4 rounded-xl font-bold text-base text-white
                        bg-gradient-to-r from-kpop-pink to-kpop-purple
                        glow-pink btn-press transition-all"
