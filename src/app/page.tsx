@@ -10,7 +10,7 @@ export default function HomePage() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const [roomCode, setRoomCode] = useState('');
-  const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu');
+  const [mode, setMode] = useState<'menu' | 'join'>('menu');
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -29,17 +29,18 @@ export default function HomePage() {
     }
   }, [user]);
 
-  const handleCreate = () => {
+  const handleCreate = (gameMode: 'quick' | 'all') => {
     if (!user) return;
     setError('');
     setActionLoading(true);
 
     const socket = getSocket();
-    socket.emit('create-room', { playerName: user.displayName }, (res: any) => {
+    socket.emit('create-room', { playerName: user.displayName, mode: gameMode }, (res: any) => {
       setActionLoading(false);
       if (res.success) {
         localStorage.setItem('kpop-quiz-name', user.displayName);
         localStorage.setItem('kpop-quiz-room', res.roomCode);
+        localStorage.setItem('kpop-quiz-mode', gameMode);
         router.push(`/room/${res.roomCode}`);
       } else {
         setError(res.error || 'Failed to create room');
@@ -63,6 +64,7 @@ export default function HomePage() {
       if (res.success) {
         localStorage.setItem('kpop-quiz-name', user.displayName);
         localStorage.setItem('kpop-quiz-room', code);
+        if (res.mode) localStorage.setItem('kpop-quiz-mode', res.mode);
         router.push(`/room/${code}`);
       } else {
         setError(res.error || 'Failed to join room');
@@ -118,12 +120,38 @@ export default function HomePage() {
         {mode === 'menu' && (
           <div className="space-y-3">
             <button
-              onClick={() => setMode('create')}
+              onClick={() => handleCreate('quick')}
+              disabled={actionLoading}
               className="w-full py-4 rounded-xl font-bold text-base text-white
                          bg-gradient-to-r from-kpop-pink to-kpop-purple
-                         glow-pink btn-press transition-all"
+                         glow-pink btn-press transition-all
+                         disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              🎵 Create Game
+              {actionLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Creating...
+                </span>
+              ) : (
+                '⚡ Quick Quiz'
+              )}
+            </button>
+            <button
+              onClick={() => handleCreate('all')}
+              disabled={actionLoading}
+              className="w-full py-4 rounded-xl font-bold text-base text-white
+                         bg-gradient-to-r from-kpop-blue to-kpop-cyan
+                         glow-purple btn-press transition-all
+                         disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {actionLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Creating...
+                </span>
+              ) : (
+                '🧠 Energy Exam'
+              )}
             </button>
             <button
               onClick={() => setMode('join')}
@@ -151,34 +179,6 @@ export default function HomePage() {
                 📊 My Stats
               </Link>
             </div>
-          </div>
-        )}
-
-        {mode === 'create' && (
-          <div className="space-y-3 animate-slide-up">
-            <button
-              onClick={handleCreate}
-              disabled={actionLoading}
-              className="w-full py-4 rounded-xl font-bold text-base text-white
-                         bg-gradient-to-r from-kpop-pink to-kpop-purple
-                         glow-pink btn-press transition-all
-                         disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {actionLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Creating...
-                </span>
-              ) : (
-                '✨ Create Room'
-              )}
-            </button>
-            <button
-              onClick={() => { setMode('menu'); setError(''); }}
-              className="w-full py-3 text-gray-400 text-sm font-medium"
-            >
-              ← Back
-            </button>
           </div>
         )}
 

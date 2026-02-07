@@ -295,6 +295,17 @@ function createGameEngine() {
       }
     },
 
+    setRoomMode(roomCode, mode) {
+      const room = rooms.get(roomCode);
+      if (!room) return;
+      room.mode = mode === 'quick' ? 'quick' : 'all';
+    },
+
+    getRoomMode(roomCode) {
+      const room = rooms.get(roomCode);
+      return room ? room.mode || 'quick' : 'quick';
+    },
+
     createRoom(socketId, playerName) {
       let roomCode;
       do {
@@ -319,6 +330,7 @@ function createGameEngine() {
       rooms.set(roomCode, {
         code: roomCode,
         status: 'lobby',
+        mode: 'quick', // default, overridden by setRoomMode
         players: [player],
         hostSocketId: socketId,
         questions: [],

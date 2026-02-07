@@ -248,10 +248,14 @@ app.prepare().then(() => {
     });
 
     // ─── Create Room ───
-    socket.on('create-room', ({ playerName }, callback) => {
+    socket.on('create-room', ({ playerName, mode }, callback) => {
       try {
         const result = engine.createRoom(socket.id, playerName);
         socket.join(result.roomCode);
+
+        // Store the game mode on the room
+        const gameMode = mode === 'quick' ? 'quick' : 'all';
+        engine.setRoomMode(result.roomCode, gameMode);
 
         // Associate userId with this player in the room
         const userInfo = socketUsers.get(socket.id);
@@ -259,8 +263,8 @@ app.prepare().then(() => {
           engine.setPlayerUserId(result.roomCode, socket.id, userInfo.userId);
         }
 
-        console.log(`[Room] Created ${result.roomCode} by ${playerName}`);
-        callback({ success: true, ...result });
+        console.log(`[Room] Created ${result.roomCode} by ${playerName} (mode: ${gameMode})`);
+        callback({ success: true, ...result, mode: gameMode });
       } catch (err) {
         callback({ success: false, error: err.message });
       }
@@ -282,8 +286,9 @@ app.prepare().then(() => {
           players: result.players,
           playerName,
         });
+        const joinMode = engine.getRoomMode(roomCode.toUpperCase());
         console.log(`[Room] ${playerName} joined ${roomCode.toUpperCase()}`);
-        callback({ success: true, ...result });
+        callback({ success: true, ...result, mode: joinMode });
       } catch (err) {
         callback({ success: false, error: err.message });
       }
@@ -292,7 +297,9 @@ app.prepare().then(() => {
     // ─── Start Game ───
     socket.on('start-game', ({ roomCode, mode }, callback) => {
       try {
-        const gameMode = mode === 'quick' ? 'quick' : 'all';
+        // Use room's pre-set mode (from create), fallback to client mode for backwards compat
+        const roomMode = engine.getRoomMode(roomCode);
+        const gameMode = mode ? (mode === 'quick' ? 'quick' : 'all') : roomMode;
         const result = engine.startGame(socket.id, roomCode, gameMode);
         io.to(roomCode).emit('game-started', {
           totalQuestions: result.totalQuestions,
@@ -388,11 +395,12 @@ app.prepare().then(() => {
           engine.setPlayerUserId(roomCode, socket.id, userInfo.userId);
         }
 
+        const rejoinMode = engine.getRoomMode(roomCode);
         io.to(roomCode).emit('player-joined', {
           players: result.players,
           playerName,
         });
-        callback({ success: true, ...result });
+        callback({ success: true, ...result, mode: rejoinMode });
       } catch (err) {
         callback({ success: false, error: err.message });
       }
