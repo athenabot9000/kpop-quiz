@@ -4,6 +4,7 @@ const next = require('next');
 const { Server } = require('socket.io');
 const { createGameEngine } = require('./src/lib/game-engine');
 const { runMigrations } = require('./src/lib/db');
+const { runPostgresMigrations } = require('./src/lib/db-postgres');
 const Database = require('better-sqlite3');
 const dbPath = require('path').join(__dirname, 'data/kpop_quiz.db');
 const {
@@ -21,8 +22,12 @@ const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = parseInt(process.env.PORT || '3000', 10);
 
-// Run database migrations on startup
-runMigrations();
+// Run database migrations on startup (async for Postgres)
+async function initDatabase() {
+  await runPostgresMigrations();
+  runMigrations(); // SQLite migrations (skipped if Postgres is active)
+}
+initDatabase().catch(err => console.error('[DB] Migration error:', err));
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -92,8 +97,8 @@ app.prepare().then(() => {
         const body = await parseJsonBody(req);
         const { username, password, displayName } = body;
         try {
-          const user = registerUser(username, password, displayName);
-          const { token, user: userData } = loginUser(username, password);
+          const user = await registerUser(username, password, displayName);
+          const { token, user: userData } = await loginUser(username, password);
           setAuthCookie(res, token);
           return jsonResponse(res, 200, { success: true, user: userData });
         } catch (err) {
@@ -106,7 +111,7 @@ app.prepare().then(() => {
         const body = await parseJsonBody(req);
         const { username, password } = body;
         try {
-          const { token, user } = loginUser(username, password);
+          const { token, user } = await loginUser(username, password);
           setAuthCookie(res, token);
           return jsonResponse(res, 200, { success: true, user });
         } catch (err) {
@@ -126,7 +131,7 @@ app.prepare().then(() => {
         if (!payload) {
           return jsonResponse(res, 401, { success: false, error: 'Not authenticated' });
         }
-        const user = getUserById(payload.userId);
+        const user = await getUserById(payload.userId);
         if (!user) {
           clearAuthCookie(res);
           return jsonResponse(res, 401, { success: false, error: 'User not found' });
@@ -148,9 +153,9 @@ app.prepare().then(() => {
         if (isNaN(userId)) {
           return jsonResponse(res, 400, { success: false, error: 'Invalid user ID' });
         }
-        const stats = getUserStats(userId);
-        const history = getGameHistory(userId);
-        const user = getUserById(userId);
+        const stats = await getUserStats(userId);
+        const history = await getGameHistory(userId);
+        const user = await getUserById(userId);
         if (!user) {
           return jsonResponse(res, 404, { success: false, error: 'User not found' });
         }
@@ -215,7 +220,7 @@ app.prepare().then(() => {
       // GET /api/leaderboard
       if (pathname === '/api/leaderboard' && req.method === 'GET') {
         const sortBy = parsedUrl.query.sort || 'total_points';
-        const data = getLeaderboard(sortBy);
+        const data = await getLeaderboard(sortBy);
         return jsonResponse(res, 200, { success: true, leaderboard: data });
       }
     } catch (err) {
@@ -415,7 +420,7 @@ app.prepare().then(() => {
     if (room._resultTimer) { clearTimeout(room._resultTimer); room._resultTimer = null; }
   }
 
-  function sendNextQuestion(roomCode) {
+  async function sendNextQuestion(roomCode) {
     const room = engine.getRoom(roomCode);
     if (!room || room.status !== 'playing') return;
 
@@ -432,10 +437,10 @@ app.prepare().then(() => {
       // Record stats for all players
       if (results && results.results) {
         const winner = results.results[0]; // sorted by score desc
-        results.results.forEach((r) => {
+        for (const r of results.results) {
           if (r.userId) {
             try {
-              recordGameResult(
+              await recordGameResult(
                 r.userId,
                 roomCode,
                 r.score,
@@ -448,7 +453,7 @@ app.prepare().then(() => {
               console.error(`[Stats] Failed to record for user ${r.userId}:`, err.message);
             }
           }
-        });
+        }
       }
       return;
     }

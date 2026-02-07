@@ -32,8 +32,20 @@ function getUserWriteDb() {
 /**
  * Run migrations — creates user tables in users.db if they don't exist.
  * Also migrates existing user data from content DB if found.
+ * Skipped when PostgreSQL is available (user data lives there instead).
  */
 function runMigrations() {
+  // Skip SQLite user migrations if Postgres is handling user data
+  try {
+    const { isPostgres } = require('./db-postgres');
+    if (isPostgres()) {
+      console.log('[DB] Skipping SQLite user migrations (using PostgreSQL)');
+      return;
+    }
+  } catch (e) {
+    // db-postgres not available, continue with SQLite
+  }
+
   const userDb = getUserWriteDb();
   try {
     userDb.exec(`
