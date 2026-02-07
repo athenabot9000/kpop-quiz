@@ -3,7 +3,7 @@ const { parse } = require('url');
 const next = require('next');
 const { Server } = require('socket.io');
 const { createGameEngine } = require('./src/lib/game-engine');
-const { runMigrations, getDb: getDbFromLib } = require('./src/lib/db');
+const { runMigrations } = require('./src/lib/db');
 const Database = require('better-sqlite3');
 const dbPath = require('path').join(__dirname, 'data/kpop_quiz.db');
 const {

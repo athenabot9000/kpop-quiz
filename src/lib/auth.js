@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { getWriteDb, getDb } = require('./db');
+const { getUserWriteDb, getUserDb } = require('./db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'kpop-quiz-secret-key-change-in-production-2024';
 const JWT_EXPIRES = '7d';
@@ -10,7 +10,7 @@ const SALT_ROUNDS = 10;
  * Register a new user
  */
 function registerUser(username, password, displayName) {
-  const db = getWriteDb();
+  const db = getUserWriteDb();
   try {
     // Validate
     if (!username || username.length < 3 || username.length > 20) {
@@ -50,7 +50,7 @@ function registerUser(username, password, displayName) {
  * Login a user, returns user data + JWT token
  */
 function loginUser(username, password) {
-  const db = getDb();
+  const db = getUserDb();
   try {
     const user = db.prepare(
       'SELECT id, username, password_hash, display_name FROM users WHERE LOWER(username) = LOWER(?)'
@@ -66,7 +66,7 @@ function loginUser(username, password) {
     }
 
     // Update last_login
-    const writeDb = getWriteDb();
+    const writeDb = getUserWriteDb();
     try {
       writeDb.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
     } finally {
@@ -107,7 +107,7 @@ function verifyToken(token) {
  * Get user by ID
  */
 function getUserById(userId) {
-  const db = getDb();
+  const db = getUserDb();
   try {
     const user = db.prepare(
       'SELECT id, username, display_name, created_at, last_login FROM users WHERE id = ?'
@@ -122,7 +122,7 @@ function getUserById(userId) {
  * Get user stats
  */
 function getUserStats(userId) {
-  const db = getDb();
+  const db = getUserDb();
   try {
     const stats = db.prepare('SELECT * FROM user_stats WHERE user_id = ?').get(userId);
     return stats || null;
@@ -135,7 +135,7 @@ function getUserStats(userId) {
  * Get user game history
  */
 function getGameHistory(userId, limit = 20) {
-  const db = getDb();
+  const db = getUserDb();
   try {
     return db.prepare(
       'SELECT * FROM game_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?'
@@ -149,7 +149,7 @@ function getGameHistory(userId, limit = 20) {
  * Record game results for a user
  */
 function recordGameResult(userId, roomCode, score, correctAnswers, totalQuestions, won, streakBest) {
-  const db = getWriteDb();
+  const db = getUserWriteDb();
   try {
     // Insert game history
     db.prepare(`
@@ -190,7 +190,7 @@ function recordGameResult(userId, roomCode, score, correctAnswers, totalQuestion
  * Get leaderboard
  */
 function getLeaderboard(sortBy = 'total_points', limit = 50) {
-  const db = getDb();
+  const db = getUserDb();
   try {
     const validSorts = ['total_points', 'wins', 'games_played', 'best_score', 'best_streak'];
     const sort = validSorts.includes(sortBy) ? sortBy : 'total_points';

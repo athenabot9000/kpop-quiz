@@ -1,2 +1,7 @@
 node_modules/
 .next/
+
+# User data — never overwrite on deploy
+data/users.db
+data/users.db-journal
+data/users.db-wal
