@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 import { getSocket } from '@/lib/socket';
 import PlayerList from '@/components/PlayerList';
 
@@ -15,23 +16,32 @@ interface Player {
 export default function LobbyPage() {
   const params = useParams();
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const roomCode = (params.code as string).toUpperCase();
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [isHost, setIsHost] = useState(false);
-  const [playerName, setPlayerName] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // Redirect if not authed
   useEffect(() => {
-    const name = localStorage.getItem('kpop-quiz-name') || '';
-    setPlayerName(name);
+    if (!authLoading && !user) {
+      router.replace('/login');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (!user) return;
 
     const socket = getSocket();
 
+    // Set user identity
+    socket.emit('set-user', { userId: user.id, displayName: user.displayName });
+
     // Check if we need to rejoin (refresh scenario)
-    if (name && socket.connected) {
-      socket.emit('rejoin-room', { roomCode, playerName: name }, (res: any) => {
+    if (socket.connected) {
+      socket.emit('rejoin-room', { roomCode, playerName: user.displayName }, (res: any) => {
         if (res.success) {
           setPlayers(res.players);
           setIsHost(res.isHost);
@@ -59,17 +69,7 @@ export default function LobbyPage() {
       socket.off('player-left');
       socket.off('game-started');
     };
-  }, [roomCode, router]);
-
-  // Also set initial players from the create/join callback data
-  useEffect(() => {
-    const socket = getSocket();
-    // Try to get current room state
-    const savedRoom = localStorage.getItem('kpop-quiz-room');
-    if (savedRoom === roomCode) {
-      // We're in the right room, players should come from socket events
-    }
-  }, [roomCode]);
+  }, [roomCode, router, user]);
 
   const handleStart = useCallback(() => {
     const socket = getSocket();
@@ -86,7 +86,6 @@ export default function LobbyPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for Safari
       const el = document.createElement('textarea');
       el.value = roomCode;
       document.body.appendChild(el);
@@ -111,6 +110,15 @@ export default function LobbyPage() {
       copyCode();
     }
   };
+
+  if (authLoading || !user) {
+    return (
+      <main className="flex-1 flex flex-col items-center justify-center px-6">
+        <div className="text-4xl mb-4 animate-pulse-glow">🎤</div>
+        <p className="text-gray-400">Loading...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="flex-1 flex flex-col items-center px-6 py-8 safe-top safe-bottom">

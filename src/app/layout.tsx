@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import '@/styles/globals.css';
+import { AuthProvider } from '@/lib/auth-context';
 
 export const metadata: Metadata = {
   title: 'K-Pop Quiz — Test Your Stan Knowledge',
@@ -25,7 +26,9 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased min-h-screen min-h-[100dvh]">
         <div className="relative z-10 min-h-screen min-h-[100dvh] flex flex-col">
-          {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
         </div>
       </body>
     </html>

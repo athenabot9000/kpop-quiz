@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 import { getSocket } from '@/lib/socket';
 import QuestionCard from '@/components/QuestionCard';
 import Timer from '@/components/Timer';
@@ -53,8 +54,9 @@ type Phase = 'waiting' | 'double-down' | 'question' | 'result' | 'game-over';
 export default function PlayPage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const roomCode = (params.code as string).toUpperCase();
-  const playerName = typeof window !== 'undefined' ? localStorage.getItem('kpop-quiz-name') || '' : '';
+  const playerName = user?.displayName || (typeof window !== 'undefined' ? localStorage.getItem('kpop-quiz-name') || '' : '');
 
   const [phase, setPhase] = useState<Phase>('waiting');
   const [question, setQuestion] = useState<QuestionData | null>(null);
@@ -95,6 +97,11 @@ export default function PlayPage() {
 
   useEffect(() => {
     const socket = getSocket();
+
+    // Ensure user identity is set
+    if (user) {
+      socket.emit('set-user', { userId: user.id, displayName: user.displayName });
+    }
 
     socket.on('double-down-phase', (data: { questionNumber: number; totalQuestions: number; difficulty: number; category: string; timeMs: number }) => {
       setPhase('double-down');
@@ -139,7 +146,7 @@ export default function PlayPage() {
       socket.off('game-over');
       stopTimer();
     };
-  }, [playerName, startClientTimer, stopTimer]);
+  }, [playerName, startClientTimer, stopTimer, user]);
 
   const handleDoubleDown = useCallback(() => {
     const socket = getSocket();
@@ -214,14 +221,24 @@ export default function PlayPage() {
           ))}
         </div>
 
-        <button
-          onClick={() => router.push('/')}
-          className="w-full max-w-sm py-4 rounded-xl font-bold text-base text-white
-                     bg-gradient-to-r from-kpop-pink to-kpop-purple
-                     glow-pink btn-press transition-all"
-        >
-          🏠 Back to Home
-        </button>
+        <div className="w-full max-w-sm space-y-3">
+          <button
+            onClick={() => router.push('/')}
+            className="w-full py-4 rounded-xl font-bold text-base text-white
+                       bg-gradient-to-r from-kpop-pink to-kpop-purple
+                       glow-pink btn-press transition-all"
+          >
+            🏠 Back to Home
+          </button>
+          <button
+            onClick={() => router.push('/profile')}
+            className="w-full py-3 rounded-xl font-semibold text-sm text-gray-300
+                       bg-kpop-card border border-white/10
+                       btn-press transition-all"
+          >
+            📊 View My Stats
+          </button>
+        </div>
       </main>
     );
   }

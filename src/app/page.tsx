@@ -2,39 +2,43 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 import { getSocket } from '@/lib/socket';
+import Link from 'next/link';
 
 export default function HomePage() {
   const router = useRouter();
-  const [playerName, setPlayerName] = useState('');
+  const { user, loading } = useAuth();
   const [roomCode, setRoomCode] = useState('');
   const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
+  // Redirect to login if not authenticated
   useEffect(() => {
-    const saved = localStorage.getItem('kpop-quiz-name');
-    if (saved) setPlayerName(saved);
-  }, []);
+    if (!loading && !user) {
+      router.replace('/login');
+    }
+  }, [user, loading, router]);
 
-  const saveName = (name: string) => {
-    setPlayerName(name);
-    localStorage.setItem('kpop-quiz-name', name);
-  };
+  // Set user identity on socket when user is available
+  useEffect(() => {
+    if (user) {
+      const socket = getSocket();
+      socket.emit('set-user', { userId: user.id, displayName: user.displayName });
+    }
+  }, [user]);
 
   const handleCreate = () => {
-    if (!playerName.trim()) {
-      setError('Enter your name first!');
-      return;
-    }
+    if (!user) return;
     setError('');
-    setLoading(true);
+    setActionLoading(true);
 
     const socket = getSocket();
-    socket.emit('create-room', { playerName: playerName.trim() }, (res: any) => {
-      setLoading(false);
+    socket.emit('create-room', { playerName: user.displayName }, (res: any) => {
+      setActionLoading(false);
       if (res.success) {
-        localStorage.setItem('kpop-quiz-name', playerName.trim());
+        localStorage.setItem('kpop-quiz-name', user.displayName);
         localStorage.setItem('kpop-quiz-room', res.roomCode);
         router.push(`/room/${res.roomCode}`);
       } else {
@@ -44,23 +48,20 @@ export default function HomePage() {
   };
 
   const handleJoin = () => {
-    if (!playerName.trim()) {
-      setError('Enter your name first!');
-      return;
-    }
+    if (!user) return;
     if (!roomCode.trim() || roomCode.trim().length !== 4) {
       setError('Enter a 4-character room code');
       return;
     }
     setError('');
-    setLoading(true);
+    setActionLoading(true);
 
     const socket = getSocket();
     const code = roomCode.trim().toUpperCase();
-    socket.emit('join-room', { roomCode: code, playerName: playerName.trim() }, (res: any) => {
-      setLoading(false);
+    socket.emit('join-room', { roomCode: code, playerName: user.displayName }, (res: any) => {
+      setActionLoading(false);
       if (res.success) {
-        localStorage.setItem('kpop-quiz-name', playerName.trim());
+        localStorage.setItem('kpop-quiz-name', user.displayName);
         localStorage.setItem('kpop-quiz-room', code);
         router.push(`/room/${code}`);
       } else {
@@ -68,6 +69,15 @@ export default function HomePage() {
       }
     });
   };
+
+  if (loading || !user) {
+    return (
+      <main className="flex-1 flex flex-col items-center justify-center px-6">
+        <div className="text-4xl mb-4 animate-pulse-glow">🎤</div>
+        <p className="text-gray-400">Loading...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center px-6 py-8 safe-top safe-bottom">
@@ -84,22 +94,19 @@ export default function HomePage() {
 
       {/* Card */}
       <div className="glass rounded-2xl p-6 w-full max-w-sm animate-slide-up">
-        {/* Name Input — always shown */}
-        <div className="mb-5">
-          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-            Your Name
-          </label>
-          <input
-            type="text"
-            value={playerName}
-            onChange={(e) => saveName(e.target.value)}
-            placeholder="Enter display name..."
-            maxLength={20}
-            className="w-full bg-kpop-darker border border-white/10 rounded-xl px-4 py-3.5 text-white 
-                       placeholder-gray-500 text-base font-medium
-                       focus:outline-none focus:border-kpop-purple/50 focus:ring-1 focus:ring-kpop-purple/30
-                       transition-colors"
-          />
+        {/* User Info */}
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Playing as</p>
+            <p className="text-white font-bold text-lg">{user.displayName}</p>
+          </div>
+          <Link
+            href="/profile"
+            className="w-9 h-9 rounded-full bg-kpop-card border border-white/10 flex items-center justify-center
+                       text-gray-400 hover:text-white transition-colors"
+          >
+            👤
+          </Link>
         </div>
 
         {error && (
@@ -126,6 +133,24 @@ export default function HomePage() {
             >
               🎶 Join Game
             </button>
+            <div className="flex gap-2 pt-2">
+              <Link
+                href="/leaderboard"
+                className="flex-1 py-3 rounded-xl font-semibold text-sm text-gray-300 text-center
+                           bg-kpop-card border border-white/5
+                           btn-press transition-all active:bg-kpop-card-hover"
+              >
+                🏆 Leaderboard
+              </Link>
+              <Link
+                href="/profile"
+                className="flex-1 py-3 rounded-xl font-semibold text-sm text-gray-300 text-center
+                           bg-kpop-card border border-white/5
+                           btn-press transition-all active:bg-kpop-card-hover"
+              >
+                📊 My Stats
+              </Link>
+            </div>
           </div>
         )}
 
@@ -133,13 +158,13 @@ export default function HomePage() {
           <div className="space-y-3 animate-slide-up">
             <button
               onClick={handleCreate}
-              disabled={loading}
+              disabled={actionLoading}
               className="w-full py-4 rounded-xl font-bold text-base text-white
                          bg-gradient-to-r from-kpop-pink to-kpop-purple
                          glow-pink btn-press transition-all
                          disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? (
+              {actionLoading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Creating...
@@ -179,13 +204,13 @@ export default function HomePage() {
             </div>
             <button
               onClick={handleJoin}
-              disabled={loading}
+              disabled={actionLoading}
               className="w-full py-4 rounded-xl font-bold text-base text-white
                          bg-gradient-to-r from-kpop-blue to-kpop-cyan
                          glow-purple btn-press transition-all
                          disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? (
+              {actionLoading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Joining...

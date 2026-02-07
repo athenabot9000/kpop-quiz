@@ -167,6 +167,15 @@ function generateRoomCode() {
 
 function createGameEngine() {
   return {
+    setPlayerUserId(roomCode, socketId, userId) {
+      const room = rooms.get(roomCode);
+      if (!room) return;
+      const player = room.players.find((p) => p.socketId === socketId);
+      if (player) {
+        player.userId = userId;
+      }
+    },
+
     createRoom(socketId, playerName) {
       let roomCode;
       do {
@@ -176,6 +185,7 @@ function createGameEngine() {
       const player = {
         socketId,
         name: playerName,
+        userId: null,
         score: 0,
         streak: 0,
         maxStreak: 0,
@@ -217,6 +227,7 @@ function createGameEngine() {
       const player = {
         socketId,
         name: playerName,
+        userId: null,
         score: 0,
         streak: 0,
         maxStreak: 0,
@@ -426,6 +437,7 @@ function createGameEngine() {
           correctCount: p.correctCount,
           maxStreak: p.maxStreak,
           isHost: p.isHost,
+          userId: p.userId || null,
         }))
         .sort((a, b) => b.score - a.score);
 
