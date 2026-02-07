@@ -1,0 +1,16 @@
+run = "npm install && npm run dev"
+entrypoint = "server.js"
+
+[env]
+PORT = "5000"
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["sh", "-c", "npm run start"]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
