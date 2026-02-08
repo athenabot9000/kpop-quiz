@@ -11,8 +11,8 @@ function getDb() {
 
 // Quick Quiz group config: name variants for text matching + DB group IDs
 const QUICK_QUIZ_GROUPS = {
-  names: ['ENHYPEN', 'TWICE', 'BABYMONSTER', 'Baby Monster', 'BLACKPINK', 'KATSEYE', 'Katseye', 'BTS', 'BTS (Bangtan Boys)'],
-  ids: [59, 208, 275, 35], // ENHYPEN=59, BLACKPINK=208, TWICE=275, BTS=35 (BABYMONSTER + KATSEYE added dynamically)
+  names: ['ENHYPEN', 'TWICE', 'BABYMONSTER', 'Baby Monster', 'BLACKPINK', 'KATSEYE', 'Katseye', 'BTS', 'BTS (Bangtan Boys)', 'Stray Kids', 'SEVENTEEN'],
+  ids: [59, 208, 275, 35, 141, 134], // ENHYPEN=59, BLACKPINK=208, TWICE=275, BTS=35, Stray Kids=141, SEVENTEEN=134 (BABYMONSTER + KATSEYE added dynamically)
 };
 
 // Resolve quick quiz group IDs at startup (includes any newly added groups)
@@ -23,6 +23,19 @@ function getQuickQuizGroupIds() {
       `SELECT id FROM groups WHERE UPPER(name) IN (${QUICK_QUIZ_GROUPS.names.map(() => '?').join(',')})`,
     ).all(...QUICK_QUIZ_GROUPS.names.map(n => n.toUpperCase()));
     return rows.map(r => r.id);
+  } finally {
+    db.close();
+  }
+}
+
+// Get display names for all quick quiz groups (for dynamic wrong answer generation)
+function getQuickQuizGroupNames() {
+  const db = getDb();
+  try {
+    const rows = db.prepare(
+      `SELECT id, name FROM groups WHERE UPPER(name) IN (${QUICK_QUIZ_GROUPS.names.map(() => '?').join(',')})`,
+    ).all(...QUICK_QUIZ_GROUPS.names.map(n => n.toUpperCase()));
+    return rows.map(r => r.name);
   } finally {
     db.close();
   }
@@ -453,7 +466,19 @@ function createGameEngine() {
       if (!q) return null; // Truly exhausted (shouldn't happen with 8k+ questions)
 
       // Generate wrong answers and build the question
-      const wrong = generateWrongAnswers(q);
+      let wrong;
+
+      // Dynamic wrong answers for song_group questions in quick quiz mode:
+      // Pick 3 random groups from the active quick quiz set (excluding the correct answer)
+      if (q.category === 'song_group' && room.gameMode === 'quick') {
+        const allGroupNames = getQuickQuizGroupNames();
+        const otherGroups = allGroupNames.filter(name => name !== q.correct_answer);
+        // Shuffle and take 3
+        wrong = otherGroups.sort(() => Math.random() - 0.5).slice(0, 3);
+      } else {
+        wrong = generateWrongAnswers(q);
+      }
+
       const answers = [q.correct_answer, ...wrong.slice(0, 3)];
       while (answers.length < 4) {
         // Pad with plausible filler if needed (shouldn't happen after fixes)
